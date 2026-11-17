@@ -97,7 +97,7 @@ Do not silently turn these proposals into confirmed rules. Record approval or th
 
 Use Python's standard library first. Record the Python version actually tested. Proposed run commands are `python cli.py` and `python -m unittest discover -s tests -v`.
 
-Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026 for `parse_time`, `default_weekdays`, `next_occurrence`, and `parse_weekdays`.
+Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026 for `parse_time`, `parse_weekdays`, `default_weekdays`, `next_occurrence`, and `make_alarm_record`.
 
 **Input must not freeze alarms.** Proposed approach: one background reader puts terminal input into a queue; the main loop alone owns and changes alarm/clock state. It checks alarms while waiting for input. A queue is a thread-safe inbox. Explain this approach before implementing it; do not add threads that independently mutate alarms.
 
@@ -107,9 +107,11 @@ A partly entered alarm is only a draft. Creating, editing or correcting the cloc
 
 These describe responsibilities. Introduce a function only when its increment needs it. Explain any split, merge or rename before changing this inventory.
 
-Existing after review: `parse_time`, `default_weekdays`, and `next_occurrence`. This patch adds `parse_weekdays` and `WEEKDAY_NAMES`.
+Existing after review: `parse_time`, `parse_weekdays`, `default_weekdays`, and `next_occurrence`. This patch adds `make_alarm_record`.
 
-Weekday text used here, open to change on review: full names Monday through Sunday, any letter case, separated by commas. Spaces at the ends and around commas are removed. A repeated name counts once. Abbreviations, blank pieces, and unknown words are rejected.
+Weekday text kept from the previous patch: full names Monday through Sunday, any letter case, separated by commas. Spaces at the ends and around commas are removed. A repeated name counts once. Abbreviations, blank pieces, and unknown words are rejected.
+
+The alarm record is a dictionary, open to change on review. Each field name maps to one value, for example `alarm["mode"]`. A data class was the other option: it would use `alarm.mode` and a `@dataclass` line. `make_alarm_record` only builds that dictionary. It does not store alarms, assign the next id, enforce the 10-alarm limit, or check schedule conflicts.
 
 | Function | Inputs → result / effect |
 | --- | --- |
@@ -119,6 +121,7 @@ Weekday text used here, open to change on review: full names Monday through Sund
 | `parse_alarm_id` | Text → positive integer ID. Reject partial numbers such as `2junk`, negatives and fractions. |
 | `parse_clock_datetime` | Date text + time text → app date/time; reuse `parse_time`. Reject impossible dates. |
 | `next_occurrence` | Time, allowed weekdays and a reference date/time → earliest matching occurrence strictly after the reference. Exists in `alarm.py`. |
+| `make_alarm_record` | Id, time, mode, weekdays, state, next occurrence, and last triggered occurrence → one alarm dictionary, or an input error when those fields disagree. Does not store it. Exists in `alarm.py`. `_require_occurrence` checks that a date/time uses the alarm's weekday and clock time. |
 | `find_conflict` | Candidate schedule, stored alarms, optional ID to exclude → conflicting ID or no conflict. Ignore finished alarms; inspect recurrence overlap. |
 | `read_app_time` | Clock reference + current elapsed-time reading → current app date/time. Does not mutate alarms. |
 | `save_alarm` | Draft + optional edited ID + current app time → validated alarm. Enforce capacity, schedule conflicts and edit restrictions together. |
@@ -165,7 +168,7 @@ Start with a simple alarm record. Whether to use a dictionary or a small Python 
 | `MAX_ALARMS` | `10`, confirmed in R1. |
 | `CHECK_INTERVAL_SECONDS` | `1`; approximate checking interval, not a guarantee of precise real-time delivery. |
 | `WEEKDAY_NAMES` | Monday through Sunday, mapped to 0 through 6. Exists in `alarm.py`. |
-| `VALID_MODES`, `VALID_STATES` | The mode and state values listed above. |
+| `VALID_MODES`, `VALID_STATES` | `once` or `repeat`; `scheduled`, `ringing`, or `finished`. Exists in `alarm.py`. |
 | `TIME_INPUT_PATTERN` | One shared definition of the accepted time syntax from approved P7. |
 | `EMPTY_ALARMS_MESSAGE` | The exact empty-state message in section 3. |
 
@@ -212,7 +215,7 @@ Each row is a milestone to divide into small patches, not permission to implemen
 
 1. Input-format proposal approved 18 Nov 2026; clock dates are `DD-MM-YYYY`. Implement only `parse_time` and its focused tests. Explain every line and wait.
 2. Scheduling patch: `default_weekdays` and `next_occurrence`, then `parse_weekdays` using comma-separated full weekday names. Wait.
-3. Add the alarm record, IDs, capacity, conflict checking and save/delete operations in separate reviewed patches. Wait.
+3. Alarm-record patch: `make_alarm_record` builds one dictionary. ID assignment, capacity, conflict checking, and save/delete remain separate patches. Wait.
 4. Add the app clock, due transitions, STOP and manual clock-change planning/applying, approving P2/P4/P5/P6 as needed. Wait after each patch.
 5. Add CLI commands and non-blocking input handling. Test an alarm firing while a dialog is open. Wait.
 6. Run the complete agreed checks, update README limitations and actual results, then prepare the walkthrough using the real commits.

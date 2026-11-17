@@ -1,12 +1,19 @@
 """Tests for alarm rules.
 
-Covers parse_time, parse_weekdays, the default weekday, and next_occurrence.
+Covers parse_time, parse_weekdays, the default weekday, next_occurrence,
+and the alarm record.
 """
 
 import unittest
 from datetime import datetime
 
-from alarm import default_weekdays, next_occurrence, parse_time, parse_weekdays
+from alarm import (
+    default_weekdays,
+    make_alarm_record,
+    next_occurrence,
+    parse_time,
+    parse_weekdays,
+)
 
 
 class ParseTimeTests(unittest.TestCase):
@@ -189,6 +196,125 @@ class ParseWeekdaysTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as caught:
                     parse_weekdays(text)
                 self.assertIn("weekday", str(caught.exception).lower())
+
+
+class AlarmRecordTests(unittest.TestCase):
+    def test_section_examples_become_scheduled_records(self):
+        monday_8am = datetime(2026, 11, 16, 8, 0)
+
+        eight_am = default_weekdays(8, 0, monday_8am)
+        once_morning = make_alarm_record(
+            1,
+            8,
+            0,
+            "once",
+            eight_am,
+            "scheduled",
+            next_occurrence(8, 0, eight_am, monday_8am),
+            None,
+        )
+        self.assertEqual(once_morning["mode"], "once")
+        self.assertEqual(once_morning["weekdays"], {1})
+        self.assertEqual(once_morning["next_due_at"], datetime(2026, 11, 17, 8, 0))
+
+        eight_pm = default_weekdays(20, 0, monday_8am)
+        once_evening = make_alarm_record(
+            2,
+            20,
+            0,
+            "once",
+            eight_pm,
+            "scheduled",
+            next_occurrence(20, 0, eight_pm, monday_8am),
+            None,
+        )
+        self.assertEqual(once_evening["weekdays"], {0})
+        self.assertEqual(once_evening["next_due_at"], datetime(2026, 11, 16, 20, 0))
+
+        friday = parse_weekdays("Friday")
+        chosen_friday = make_alarm_record(
+            3,
+            20,
+            0,
+            "once",
+            friday,
+            "scheduled",
+            next_occurrence(20, 0, friday, monday_8am),
+            None,
+        )
+        self.assertEqual(chosen_friday["weekdays"], {4})
+        self.assertEqual(chosen_friday["next_due_at"], datetime(2026, 11, 20, 20, 0))
+
+        monday_and_thursday = parse_weekdays("Monday, Thursday")
+        repeated = make_alarm_record(
+            4,
+            20,
+            0,
+            "repeat",
+            monday_and_thursday,
+            "scheduled",
+            next_occurrence(20, 0, monday_and_thursday, monday_8am),
+            None,
+        )
+        self.assertEqual(repeated["mode"], "repeat")
+        self.assertEqual(repeated["weekdays"], {0, 3})
+        self.assertEqual(repeated["next_due_at"], datetime(2026, 11, 16, 20, 0))
+        self.assertIsNone(repeated["last_triggered_occurrence"])
+
+        monday_and_thursday.add(4)
+        self.assertEqual(repeated["weekdays"], {0, 3})
+
+    def test_finished_alarm_keeps_no_next_occurrence(self):
+        finished = make_alarm_record(
+            5,
+            8,
+            0,
+            "once",
+            {0},
+            "finished",
+            None,
+            datetime(2026, 11, 16, 8, 0),
+        )
+        self.assertEqual(finished["state"], "finished")
+        self.assertIsNone(finished["next_due_at"])
+        self.assertEqual(
+            finished["last_triggered_occurrence"],
+            datetime(2026, 11, 16, 8, 0),
+        )
+
+    def test_ringing_alarm_keeps_its_occurrence(self):
+        ringing = make_alarm_record(
+            6,
+            8,
+            0,
+            "once",
+            {0},
+            "ringing",
+            datetime(2026, 11, 16, 8, 0),
+            datetime(2026, 11, 16, 8, 0),
+        )
+        self.assertEqual(ringing["state"], "ringing")
+        self.assertEqual(ringing["next_due_at"], datetime(2026, 11, 16, 8, 0))
+
+    def test_rejects_a_record_that_breaks_its_fields(self):
+        due = datetime(2026, 11, 17, 8, 0)
+        cases = [
+            (0, 8, 0, "once", {1}, "scheduled", due, None),
+            (1, 24, 0, "once", {1}, "scheduled", due, None),
+            (1, 8, 60, "once", {1}, "scheduled", due, None),
+            (1, 8, 0, "daily", {1}, "scheduled", due, None),
+            (1, 8, 0, "once", {1}, "paused", due, None),
+            (1, 8, 0, "once", set(), "scheduled", due, None),
+            (1, 8, 0, "once", {7}, "scheduled", due, None),
+            (1, 8, 0, "once", {1}, "scheduled", None, None),
+            (1, 8, 0, "once", {1}, "finished", due, None),
+            (1, 8, 0, "once", {4}, "scheduled", due, None),
+            (1, 8, 0, "once", {1}, "scheduled", datetime(2026, 11, 17, 9, 0), None),
+        ]
+        for fields in cases:
+            with self.subTest(fields=fields):
+                with self.assertRaises(ValueError):
+                    make_alarm_record(*fields)
 
 
 if __name__ == "__main__":

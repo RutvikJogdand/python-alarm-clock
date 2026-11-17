@@ -23,6 +23,9 @@ WEEKDAY_NAMES = (
     "Sunday",
 )
 
+VALID_MODES = ("once", "repeat")
+VALID_STATES = ("scheduled", "ringing", "finished")
+
 
 def parse_time(text): #function to parse a 12-hour time string and convert it to a 24-hour time for interal operations.
     """Return (hour_24, minute) for an approved 12-hour time.
@@ -123,3 +126,71 @@ def next_occurrence(hour_24, minute, weekdays, reference):
             return candidate
 
     raise ValueError("Choose at least one weekday.")
+
+
+def _require_occurrence(occurrence, hour_24, minute, weekdays):
+    """Reject an occurrence that is not this alarm's weekday and time."""
+    if type(occurrence) is not datetime:
+        raise ValueError("An occurrence must be a date and time.")
+    if occurrence.weekday() not in weekdays:
+        raise ValueError("An occurrence must fall on a selected weekday.")
+    if (occurrence.hour, occurrence.minute) != (hour_24, minute):
+        raise ValueError("An occurrence must use the alarm's hour and minute.")
+
+
+def make_alarm_record(
+    alarm_id,
+    hour_24,
+    minute,
+    mode,
+    weekdays,
+    state,
+    next_due_at,
+    last_triggered_occurrence,
+):
+    """Return one alarm dictionary.
+
+    The caller supplies every field. This does not store the alarm, choose
+    the next id, check the 10-alarm limit, or look for schedule conflicts.
+    """
+    if type(alarm_id) is not int or alarm_id < 1:
+        raise ValueError("Alarm id must be a positive whole number.")
+    if type(hour_24) is not int or hour_24 not in range(24):
+        raise ValueError("Hour must be a whole number from 0 through 23.")
+    if type(minute) is not int or minute not in range(60):
+        raise ValueError("Minute must be a whole number from 0 through 59.")
+    if mode not in VALID_MODES:
+        raise ValueError("Alarm mode must be once or repeat.")
+    if state not in VALID_STATES:
+        raise ValueError("Alarm state must be scheduled, ringing, or finished.")
+
+    stored_weekdays = set(weekdays)
+    if len(stored_weekdays) == 0:
+        raise ValueError("Choose at least one weekday.")
+    for weekday in stored_weekdays:
+        if type(weekday) is not int or weekday not in range(7):
+            raise ValueError(
+                "Weekday numbers run from 0 for Monday through 6 for Sunday."
+            )
+
+    if state == "finished":
+        if next_due_at is not None:
+            raise ValueError("A finished alarm has no next occurrence.")
+    else:
+        _require_occurrence(next_due_at, hour_24, minute, stored_weekdays)
+
+    if last_triggered_occurrence is not None:
+        _require_occurrence(
+            last_triggered_occurrence, hour_24, minute, stored_weekdays
+        )
+
+    return {
+        "id": alarm_id,
+        "hour_24": hour_24,
+        "minute": minute,
+        "mode": mode,
+        "weekdays": stored_weekdays,
+        "state": state,
+        "next_due_at": next_due_at,
+        "last_triggered_occurrence": last_triggered_occurrence,
+    }
