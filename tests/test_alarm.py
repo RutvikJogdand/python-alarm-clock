@@ -1,12 +1,12 @@
 """Tests for alarm rules.
 
-Covers parse_time, the default weekday, and next_occurrence.
+Covers parse_time, parse_weekdays, the default weekday, and next_occurrence.
 """
 
 import unittest
 from datetime import datetime
 
-from alarm import default_weekdays, next_occurrence, parse_time
+from alarm import default_weekdays, next_occurrence, parse_time, parse_weekdays
 
 
 class ParseTimeTests(unittest.TestCase):
@@ -143,6 +143,51 @@ class NextOccurrenceTests(unittest.TestCase):
             with self.subTest(weekdays=weekdays):
                 with self.assertRaises(ValueError) as caught:
                     next_occurrence(8, 0, weekdays, reference)
+                self.assertIn("weekday", str(caught.exception).lower())
+
+
+class ParseWeekdaysTests(unittest.TestCase):
+    def test_accepts_full_names_in_any_case(self):
+        cases = [
+            ("Monday", {0}),
+            ("friday", {4}),
+            ("Sunday", {6}),
+            ("monday, thursday", {0, 3}),
+            (" Monday , Thursday ", {0, 3}),
+            ("Monday, Monday", {0}),
+            (
+                "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday",
+                {0, 1, 2, 3, 4, 5, 6},
+            ),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(parse_weekdays(text), expected)
+
+    def test_chosen_friday_text_feeds_next_occurrence(self):
+        monday_8am = datetime(2026, 11, 16, 8, 0)
+        friday = parse_weekdays("Friday")
+        self.assertEqual(
+            next_occurrence(20, 0, friday, monday_8am),
+            datetime(2026, 11, 20, 20, 0),
+        )
+
+    def test_rejects_empty_or_invalid_weekday_text(self):
+        cases = [
+            "",
+            "   ",
+            "Mon",
+            "Monday Thursday",
+            "Monday,",
+            "Monday,,Thursday",
+            ",Monday",
+            "Funday",
+            "8",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                with self.assertRaises(ValueError) as caught:
+                    parse_weekdays(text)
                 self.assertIn("weekday", str(caught.exception).lower())
 
 

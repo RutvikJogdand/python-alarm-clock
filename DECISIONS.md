@@ -97,7 +97,7 @@ Do not silently turn these proposals into confirmed rules. Record approval or th
 
 Use Python's standard library first. Record the Python version actually tested. Proposed run commands are `python cli.py` and `python -m unittest discover -s tests -v`.
 
-Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026 for `parse_time`, `default_weekdays`, and `next_occurrence`.
+Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026 for `parse_time`, `default_weekdays`, `next_occurrence`, and `parse_weekdays`.
 
 **Input must not freeze alarms.** Proposed approach: one background reader puts terminal input into a queue; the main loop alone owns and changes alarm/clock state. It checks alarms while waiting for input. A queue is a thread-safe inbox. Explain this approach before implementing it; do not add threads that independently mutate alarms.
 
@@ -107,13 +107,15 @@ A partly entered alarm is only a draft. Creating, editing or correcting the cloc
 
 These describe responsibilities. Introduce a function only when its increment needs it. Explain any split, merge or rename before changing this inventory.
 
-Existing after review: `parse_time` and `TIME_INPUT_PATTERN` (increment 1). This scheduling patch adds `default_weekdays` and `next_occurrence`. `parse_weekdays` is still planned; the weekday text format is not approved yet.
+Existing after review: `parse_time`, `default_weekdays`, and `next_occurrence`. This patch adds `parse_weekdays` and `WEEKDAY_NAMES`.
+
+Weekday text used here, open to change on review: full names Monday through Sunday, any letter case, separated by commas. Spaces at the ends and around commas are removed. A repeated name counts once. Abbreviations, blank pieces, and unknown words are rejected.
 
 | Function | Inputs → result / effect |
 | --- | --- |
 | `parse_time` | Text → `(hour_24, minute)` or an understandable input error. Shared by create, edit and clock input. Exists in `alarm.py`. |
 | `default_weekdays` | Hour, minute and a reference date/time → a set containing one weekday number. A later clock time uses the reference date. An equal or earlier clock time uses the next date. This is the R4 default day, kept separate from `next_occurrence` so a chosen weekday can be passed in on its own. |
-| `parse_weekdays` | Text → a non-empty set of weekday numbers, or an input error. Not written yet. |
+| `parse_weekdays` | Text → a non-empty set of weekday numbers, or an input error. Exists in `alarm.py`. |
 | `parse_alarm_id` | Text → positive integer ID. Reject partial numbers such as `2junk`, negatives and fractions. |
 | `parse_clock_datetime` | Date text + time text → app date/time; reuse `parse_time`. Reject impossible dates. |
 | `next_occurrence` | Time, allowed weekdays and a reference date/time → earliest matching occurrence strictly after the reference. Exists in `alarm.py`. |
@@ -162,7 +164,7 @@ Start with a simple alarm record. Whether to use a dictionary or a small Python 
 | --- | --- |
 | `MAX_ALARMS` | `10`, confirmed in R1. |
 | `CHECK_INTERVAL_SECONDS` | `1`; approximate checking interval, not a guarantee of precise real-time delivery. |
-| `WEEKDAY_NAMES` | Monday through Sunday, mapped to 0 through 6. |
+| `WEEKDAY_NAMES` | Monday through Sunday, mapped to 0 through 6. Exists in `alarm.py`. |
 | `VALID_MODES`, `VALID_STATES` | The mode and state values listed above. |
 | `TIME_INPUT_PATTERN` | One shared definition of the accepted time syntax from approved P7. |
 | `EMPTY_ALARMS_MESSAGE` | The exact empty-state message in section 3. |
@@ -209,7 +211,7 @@ Pass explicit test times or substitute the clock-reading function. Tests must no
 Each row is a milestone to divide into small patches, not permission to implement the entire row at once.
 
 1. Input-format proposal approved 18 Nov 2026; clock dates are `DD-MM-YYYY`. Implement only `parse_time` and its focused tests. Explain every line and wait.
-2. Scheduling patch: `default_weekdays` and `next_occurrence`, with default-day and weekly-boundary tests. `parse_weekdays` waits for an approved weekday text format. Wait.
+2. Scheduling patch: `default_weekdays` and `next_occurrence`, then `parse_weekdays` using comma-separated full weekday names. Wait.
 3. Add the alarm record, IDs, capacity, conflict checking and save/delete operations in separate reviewed patches. Wait.
 4. Add the app clock, due transitions, STOP and manual clock-change planning/applying, approving P2/P4/P5/P6 as needed. Wait after each patch.
 5. Add CLI commands and non-blocking input handling. Test an alarm firing while a dialog is open. Wait.

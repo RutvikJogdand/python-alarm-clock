@@ -12,6 +12,17 @@ TIME_INPUT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Monday is 0 and Sunday is 6. The position of each name is its weekday number.
+WEEKDAY_NAMES = (
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+)
+
 
 def parse_time(text): #function to parse a 12-hour time string and convert it to a 24-hour time for interal operations.
     """Return (hour_24, minute) for an approved 12-hour time.
@@ -38,6 +49,38 @@ def parse_time(text): #function to parse a 12-hour time string and convert it to
         hour_24 = 12 if hour_12 == 12 else hour_12 + 12
 
     return (hour_24, minute)
+
+
+def parse_weekdays(text):
+    """Return weekday numbers for comma-separated full weekday names.
+
+    Names may use any letter case. Spaces at the ends and around commas are
+    removed. Monday is 0 and Sunday is 6. A repeated name is stored once.
+    """
+    cleaned = text.strip(" ")
+    if cleaned == "":
+        raise ValueError("Enter at least one weekday, for example Monday, Thursday.")
+
+    numbers = set()
+    for part in cleaned.split(","):
+        name = part.strip(" ")
+        if name == "":
+            raise ValueError(
+                "Enter weekdays like Monday, Thursday. "
+                "Use full names separated by commas."
+            )
+        matched_number = None
+        for number, weekday_name in enumerate(WEEKDAY_NAMES):
+            if name.upper() == weekday_name.upper():
+                matched_number = number
+                break
+        if matched_number is None:
+            raise ValueError(
+                "Enter weekdays like Monday, Thursday. "
+                "Use full names separated by commas."
+            )
+        numbers.add(matched_number)
+    return numbers
 
 
 def default_weekdays(hour_24, minute, reference): #function to determine the default weekday for a new alarm based on the current time and the reference time.
