@@ -194,3 +194,28 @@ def make_alarm_record(
         "next_due_at": next_due_at,
         "last_triggered_occurrence": last_triggered_occurrence,
     }
+
+
+def empty_alarm_store():
+    """Return a store with no alarms and a next id of 1."""
+    return {
+        "alarms_by_id": {},
+        "next_alarm_id": 1,
+    }
+
+
+def store_new_alarm(store, alarm):
+    """Store a new alarm whose id is the store's next id.
+
+    The next id increases by one after a successful store. A rejected alarm
+    leaves the store unchanged. This does not check capacity or conflicts.
+    """
+    expected_id = store["next_alarm_id"]
+    if alarm["id"] != expected_id:
+        raise ValueError(f"The next alarm id is {expected_id}.")
+
+    stored = dict(alarm)
+    stored["weekdays"] = set(alarm["weekdays"])
+    store["alarms_by_id"][expected_id] = stored
+    store["next_alarm_id"] = expected_id + 1
+    return stored

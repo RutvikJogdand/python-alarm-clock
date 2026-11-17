@@ -1,7 +1,7 @@
 """Tests for alarm rules.
 
 Covers parse_time, parse_weekdays, the default weekday, next_occurrence,
-and the alarm record.
+the alarm record, and storing a new alarm id.
 """
 
 import unittest
@@ -9,10 +9,12 @@ from datetime import datetime
 
 from alarm import (
     default_weekdays,
+    empty_alarm_store,
     make_alarm_record,
     next_occurrence,
     parse_time,
     parse_weekdays,
+    store_new_alarm,
 )
 
 
@@ -315,6 +317,72 @@ class AlarmRecordTests(unittest.TestCase):
             with self.subTest(fields=fields):
                 with self.assertRaises(ValueError):
                     make_alarm_record(*fields)
+
+
+class AlarmStoreTests(unittest.TestCase):
+    def test_new_alarms_receive_increasing_ids(self):
+        monday_8am = datetime(2026, 11, 16, 8, 0)
+        store = empty_alarm_store()
+        self.assertEqual(store["next_alarm_id"], 1)
+        self.assertEqual(store["alarms_by_id"], {})
+
+        morning_days = default_weekdays(8, 0, monday_8am)
+        morning = make_alarm_record(
+            1,
+            8,
+            0,
+            "once",
+            morning_days,
+            "scheduled",
+            next_occurrence(8, 0, morning_days, monday_8am),
+            None,
+        )
+        stored_morning = store_new_alarm(store, morning)
+        self.assertIs(store["alarms_by_id"][1], stored_morning)
+        self.assertEqual(stored_morning["next_due_at"], datetime(2026, 11, 17, 8, 0))
+        self.assertEqual(store["next_alarm_id"], 2)
+
+        morning["state"] = "finished"
+        morning["weekdays"].add(4)
+        self.assertEqual(stored_morning["state"], "scheduled")
+        self.assertEqual(stored_morning["weekdays"], {1})
+
+        evening_days = default_weekdays(20, 0, monday_8am)
+        evening = make_alarm_record(
+            2,
+            20,
+            0,
+            "once",
+            evening_days,
+            "scheduled",
+            next_occurrence(20, 0, evening_days, monday_8am),
+            None,
+        )
+        store_new_alarm(store, evening)
+        self.assertEqual(set(store["alarms_by_id"]), {1, 2})
+        self.assertEqual(
+            store["alarms_by_id"][2]["next_due_at"],
+            datetime(2026, 11, 16, 20, 0),
+        )
+        self.assertEqual(store["next_alarm_id"], 3)
+
+    def test_wrong_id_leaves_the_store_unchanged(self):
+        store = empty_alarm_store()
+        wrong = make_alarm_record(
+            2,
+            8,
+            0,
+            "once",
+            {1},
+            "scheduled",
+            datetime(2026, 11, 17, 8, 0),
+            None,
+        )
+        with self.assertRaises(ValueError) as caught:
+            store_new_alarm(store, wrong)
+        self.assertIn("1", str(caught.exception))
+        self.assertEqual(store["next_alarm_id"], 1)
+        self.assertEqual(store["alarms_by_id"], {})
 
 
 if __name__ == "__main__":
