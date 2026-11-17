@@ -97,7 +97,7 @@ Do not silently turn these proposals into confirmed rules. Record approval or th
 
 Use Python's standard library first. Record the Python version actually tested. Proposed run commands are `python cli.py` and `python -m unittest discover -s tests -v`.
 
-Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026 through `find_conflict`, including daily-versus-Monday overlap and the 10-alarm limit.
+Python version tested: 3.13.1. `python -m unittest discover -s tests -v` passed on 18 Nov 2026, 35 tests, including the command demo path. The completion pass applied proposals P2, P4, P5, P6, P9 and P10 so the app could be demonstrated. Persistence was not added.
 
 **Input must not freeze alarms.** Proposed approach: one background reader puts terminal input into a queue; the main loop alone owns and changes alarm/clock state. It checks alarms while waiting for input. A queue is a thread-safe inbox. Explain this approach before implementing it; do not add threads that independently mutate alarms.
 

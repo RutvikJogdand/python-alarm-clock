@@ -515,5 +515,125 @@ class ConflictTests(unittest.TestCase):
         self.assertEqual(find_conflict(daily, stored, exclude_id=2), 1)
 
 
+class ClockAndStateTests(unittest.TestCase):
+    def _once(self, alarm_id, due):
+        return make_alarm_record(
+            alarm_id, due.hour, due.minute, "once", {due.weekday()}, "scheduled", due, None
+        )
+
+    def test_forward_past_a_once_alarm_moves_to_the_next_weekday(self):
+        from alarm import plan_clock_change
+
+        store = empty_alarm_store()
+        store_new_alarm(store, self._once(1, datetime(2026, 11, 16, 8, 0)))
+        plan = plan_clock_change(store, datetime(2026, 11, 16, 9, 0))
+        self.assertEqual(plan["records"][1]["mode"], "once")
+        self.assertEqual(plan["records"][1]["state"], "scheduled")
+        self.assertEqual(plan["records"][1]["next_due_at"], datetime(2026, 11, 23, 8, 0))
+        self.assertEqual(store["alarms_by_id"][1]["next_due_at"], datetime(2026, 11, 16, 8, 0))
+
+    def test_landing_exactly_on_a_pending_alarm_is_marked_to_ring(self):
+        from alarm import plan_clock_change
+
+        store = empty_alarm_store()
+        store_new_alarm(store, self._once(1, datetime(2026, 11, 16, 8, 0)))
+        plan = plan_clock_change(store, datetime(2026, 11, 16, 8, 0))
+        self.assertIn("will start ringing", plan["lines"][0])
+
+    def test_backward_clock_keeps_a_finished_alarm_finished(self):
+        from alarm import apply_clock_change, plan_clock_change
+
+        store = empty_alarm_store()
+        store_new_alarm(
+            store,
+            make_alarm_record(
+                1, 8, 0, "once", {0}, "finished", None, datetime(2026, 11, 16, 8, 0)
+            ),
+        )
+        plan = plan_clock_change(store, datetime(2026, 11, 16, 7, 0))
+        apply_clock_change(store, plan)
+        self.assertEqual(store["alarms_by_id"][1]["state"], "finished")
+        self.assertIsNone(store["alarms_by_id"][1]["next_due_at"])
+
+    def test_backward_clock_keeps_a_pending_once_date(self):
+        from alarm import plan_clock_change
+
+        store = empty_alarm_store()
+        store_new_alarm(store, self._once(1, datetime(2026, 11, 16, 8, 0)))
+        plan = plan_clock_change(store, datetime(2026, 11, 16, 7, 0))
+        self.assertEqual(plan["records"][1]["next_due_at"], datetime(2026, 11, 16, 8, 0))
+
+    def test_rolling_a_once_alarm_can_collide(self):
+        from alarm import plan_clock_change
+
+        store = empty_alarm_store()
+        store_new_alarm(store, self._once(1, datetime(2026, 11, 16, 8, 0)))
+        store_new_alarm(store, self._once(2, datetime(2026, 11, 23, 8, 0)))
+        with self.assertRaises(ValueError) as caught:
+            plan_clock_change(store, datetime(2026, 11, 16, 9, 0))
+        self.assertIn("overlap", str(caught.exception))
+        self.assertEqual(store["alarms_by_id"][1]["next_due_at"], datetime(2026, 11, 16, 8, 0))
+
+    def test_delete_frees_a_slot_and_does_not_renumber(self):
+        from alarm import delete_alarm
+
+        store = empty_alarm_store()
+        triggered = datetime(2026, 11, 16, 8, 0)
+        for alarm_id in range(1, 11):
+            store_new_alarm(
+                store,
+                make_alarm_record(
+                    alarm_id, 8, 0, "once", {0}, "finished", None, triggered
+                ),
+            )
+        delete_alarm(store, 4)
+        self.assertNotIn(4, store["alarms_by_id"])
+        self.assertEqual(store["alarms_by_id"][5]["id"], 5)
+        self.assertEqual(store["next_alarm_id"], 11)
+        store_new_alarm(
+            store,
+            make_alarm_record(11, 9, 0, "once", {1}, "finished", None, datetime(2026, 11, 17, 9, 0)),
+        )
+        self.assertEqual(len(store["alarms_by_id"]), 10)
+
+    def test_stop_finishes_a_once_alarm_and_advances_a_repeat(self):
+        from alarm import delete_alarm, process_due_alarms, stop_alarm
+
+        store = empty_alarm_store()
+        store_new_alarm(store, self._once(1, datetime(2026, 11, 16, 8, 0)))
+        store_new_alarm(
+            store,
+            make_alarm_record(
+                2, 9, 0, "repeat", {0}, "scheduled", datetime(2026, 11, 16, 9, 0), None
+            ),
+        )
+        eight = datetime(2026, 11, 16, 8, 0)
+        nine = datetime(2026, 11, 16, 9, 0)
+        self.assertEqual(process_due_alarms(store, eight), [1])
+        self.assertEqual(process_due_alarms(store, eight), [])
+        self.assertEqual(process_due_alarms(store, nine), [2])
+        stop_alarm(store, 1, eight)
+        self.assertEqual(store["alarms_by_id"][1]["state"], "finished")
+        stop_alarm(store, 2, nine)
+        self.assertEqual(store["alarms_by_id"][2]["state"], "scheduled")
+        self.assertEqual(store["alarms_by_id"][2]["next_due_at"], datetime(2026, 11, 23, 9, 0))
+        with self.assertRaises(ValueError):
+            delete_alarm(store, 99)
+
+    def test_parse_clock_and_alarm_id(self):
+        from alarm import parse_alarm_id, parse_clock_datetime
+
+        self.assertEqual(parse_alarm_id(" 2 "), 2)
+        self.assertEqual(
+            parse_clock_datetime("18-11-2026", "8:00 AM"),
+            datetime(2026, 11, 18, 8, 0),
+        )
+        for text in ("2junk", "-1", "1.5", "0"):
+            with self.assertRaises(ValueError):
+                parse_alarm_id(text)
+        with self.assertRaises(ValueError):
+            parse_clock_datetime("31-02-2026", "8:00 AM")
+
+
 if __name__ == "__main__":
     unittest.main()
