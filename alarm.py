@@ -25,6 +25,7 @@ WEEKDAY_NAMES = (
 
 VALID_MODES = ("once", "repeat")
 VALID_STATES = ("scheduled", "ringing", "finished")
+MAX_ALARMS = 10
 
 
 def parse_time(text): #function to parse a 12-hour time string and convert it to a 24-hour time for interal operations.
@@ -207,12 +208,15 @@ def empty_alarm_store():
 def store_new_alarm(store, alarm):
     """Store a new alarm whose id is the store's next id.
 
-    The next id increases by one after a successful store. A rejected alarm
-    leaves the store unchanged. This does not check capacity or conflicts.
+    At most 10 stored alarms are allowed, including finished alarms. The next
+    id increases by one after a successful store. A rejected alarm leaves the
+    store unchanged. This does not check conflicts.
     """
     expected_id = store["next_alarm_id"]
     if alarm["id"] != expected_id:
         raise ValueError(f"The next alarm id is {expected_id}.")
+    if len(store["alarms_by_id"]) >= MAX_ALARMS:
+        raise ValueError(f"At most {MAX_ALARMS} alarms can be stored.")
 
     stored = dict(alarm)
     stored["weekdays"] = set(alarm["weekdays"])

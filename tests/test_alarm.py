@@ -384,6 +384,36 @@ class AlarmStoreTests(unittest.TestCase):
         self.assertEqual(store["next_alarm_id"], 1)
         self.assertEqual(store["alarms_by_id"], {})
 
+    def test_ten_finished_alarms_fit_and_the_eleventh_is_rejected(self):
+        store = empty_alarm_store()
+        triggered = datetime(2026, 11, 16, 8, 0)
+        for alarm_id in range(1, 11):
+            store_new_alarm(
+                store,
+                make_alarm_record(
+                    alarm_id,
+                    8,
+                    0,
+                    "once",
+                    {0},
+                    "finished",
+                    None,
+                    triggered,
+                ),
+            )
+        self.assertEqual(len(store["alarms_by_id"]), 10)
+        self.assertEqual(store["next_alarm_id"], 11)
+
+        eleventh = make_alarm_record(
+            11, 8, 0, "once", {0}, "finished", None, triggered
+        )
+        with self.assertRaises(ValueError) as caught:
+            store_new_alarm(store, eleventh)
+        self.assertIn("10", str(caught.exception))
+        self.assertEqual(len(store["alarms_by_id"]), 10)
+        self.assertEqual(store["next_alarm_id"], 11)
+        self.assertNotIn(11, store["alarms_by_id"])
+
 
 if __name__ == "__main__":
     unittest.main()
