@@ -10,6 +10,7 @@ from datetime import datetime
 from alarm import (
     default_weekdays,
     empty_alarm_store,
+    find_conflict,
     make_alarm_record,
     next_occurrence,
     parse_time,
@@ -413,6 +414,105 @@ class AlarmStoreTests(unittest.TestCase):
         self.assertEqual(len(store["alarms_by_id"]), 10)
         self.assertEqual(store["next_alarm_id"], 11)
         self.assertNotIn(11, store["alarms_by_id"])
+
+
+class ConflictTests(unittest.TestCase):
+    def test_different_weekdays_at_the_same_time_may_coexist(self):
+        store = empty_alarm_store()
+        monday = make_alarm_record(
+            1, 8, 0, "repeat", {0}, "scheduled", datetime(2026, 11, 23, 8, 0), None
+        )
+        tuesday = make_alarm_record(
+            2, 8, 0, "repeat", {1}, "scheduled", datetime(2026, 11, 17, 8, 0), None
+        )
+        store_new_alarm(store, monday)
+        self.assertIsNone(find_conflict(tuesday, store["alarms_by_id"]))
+        store_new_alarm(store, tuesday)
+        self.assertEqual(set(store["alarms_by_id"]), {1, 2})
+
+    def test_same_once_date_and_time_is_rejected(self):
+        store = empty_alarm_store()
+        due = datetime(2026, 11, 16, 20, 0)
+        store_new_alarm(
+            store,
+            make_alarm_record(1, 20, 0, "once", {0}, "scheduled", due, None),
+        )
+        duplicate = make_alarm_record(2, 20, 0, "once", {0}, "scheduled", due, None)
+        self.assertEqual(find_conflict(duplicate, store["alarms_by_id"]), 1)
+        with self.assertRaises(ValueError) as caught:
+            store_new_alarm(store, duplicate)
+        self.assertIn("1", str(caught.exception))
+        self.assertEqual(store["next_alarm_id"], 2)
+        self.assertNotIn(2, store["alarms_by_id"])
+
+    def test_once_alarms_on_different_mondays_may_coexist(self):
+        store = empty_alarm_store()
+        first = make_alarm_record(
+            1, 8, 0, "once", {0}, "scheduled", datetime(2026, 11, 16, 8, 0), None
+        )
+        later = make_alarm_record(
+            2, 8, 0, "once", {0}, "scheduled", datetime(2026, 11, 23, 8, 0), None
+        )
+        store_new_alarm(store, first)
+        self.assertIsNone(find_conflict(later, store["alarms_by_id"]))
+        store_new_alarm(store, later)
+
+    def test_daily_conflicts_with_monday_when_next_dates_differ(self):
+        tuesday_7am = datetime(2026, 11, 17, 7, 0)
+        monday_days = {0}
+        daily_days = set(range(7))
+        monday_due = next_occurrence(8, 0, monday_days, tuesday_7am)
+        daily_due = next_occurrence(8, 0, daily_days, tuesday_7am)
+        self.assertEqual(monday_due, datetime(2026, 11, 23, 8, 0))
+        self.assertEqual(daily_due, datetime(2026, 11, 17, 8, 0))
+
+        store = empty_alarm_store()
+        store_new_alarm(
+            store,
+            make_alarm_record(
+                1, 8, 0, "repeat", monday_days, "scheduled", monday_due, None
+            ),
+        )
+        daily = make_alarm_record(
+            2, 8, 0, "repeat", daily_days, "scheduled", daily_due, None
+        )
+        self.assertEqual(find_conflict(daily, store["alarms_by_id"]), 1)
+        with self.assertRaises(ValueError):
+            store_new_alarm(store, daily)
+        self.assertEqual(set(store["alarms_by_id"]), {1})
+
+    def test_finished_alarm_does_not_block_a_schedule(self):
+        store = empty_alarm_store()
+        finished = make_alarm_record(
+            1,
+            8,
+            0,
+            "repeat",
+            {0},
+            "finished",
+            None,
+            datetime(2026, 11, 16, 8, 0),
+        )
+        store_new_alarm(store, finished)
+        scheduled = make_alarm_record(
+            2, 8, 0, "repeat", {0}, "scheduled", datetime(2026, 11, 23, 8, 0), None
+        )
+        self.assertIsNone(find_conflict(scheduled, store["alarms_by_id"]))
+        store_new_alarm(store, scheduled)
+
+    def test_edit_exclusion_ignores_the_alarms_own_id(self):
+        store = empty_alarm_store()
+        monday = make_alarm_record(
+            1, 8, 0, "repeat", {0}, "scheduled", datetime(2026, 11, 23, 8, 0), None
+        )
+        daily = make_alarm_record(
+            2, 8, 0, "repeat", set(range(7)), "scheduled", datetime(2026, 11, 17, 8, 0), None
+        )
+        store_new_alarm(store, monday)
+        stored = store["alarms_by_id"]
+        self.assertEqual(find_conflict(monday, stored), 1)
+        self.assertIsNone(find_conflict(monday, stored, exclude_id=1))
+        self.assertEqual(find_conflict(daily, stored, exclude_id=2), 1)
 
 
 if __name__ == "__main__":

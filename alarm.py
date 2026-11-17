@@ -205,18 +205,54 @@ def empty_alarm_store():
     }
 
 
+def find_conflict(candidate, stored_alarms, exclude_id=None):
+    """Return the id of a stored alarm that overlaps this schedule.
+
+    Finished alarms are ignored. exclude_id skips one stored alarm so a later
+    edit can ignore itself. The result is None when nothing overlaps.
+    Two once alarms overlap only when their next occurrences are the same
+    date and time. A repeat overlaps another alarm when they share a weekday
+    and use the same hour and minute.
+    """
+    if candidate["state"] == "finished":
+        return None
+
+    candidate_time = (candidate["hour_24"], candidate["minute"])
+    candidate_days = set(candidate["weekdays"])
+    for alarm_id in sorted(stored_alarms):
+        if alarm_id == exclude_id:
+            continue
+        alarm = stored_alarms[alarm_id]
+        if alarm["state"] == "finished":
+            continue
+        if (alarm["hour_24"], alarm["minute"]) != candidate_time:
+            continue
+        if candidate["mode"] == "once" and alarm["mode"] == "once":
+            if candidate["next_due_at"] == alarm["next_due_at"]:
+                return alarm_id
+            continue
+        shared_days = candidate_days.intersection(alarm["weekdays"])
+        if len(shared_days) > 0:
+            return alarm_id
+    return None
+
+
 def store_new_alarm(store, alarm):
     """Store a new alarm whose id is the store's next id.
 
-    At most 10 stored alarms are allowed, including finished alarms. The next
-    id increases by one after a successful store. A rejected alarm leaves the
-    store unchanged. This does not check conflicts.
+    At most 10 stored alarms are allowed, including finished alarms. A new
+    alarm that overlaps a stored future schedule is rejected. The next id
+    increases by one after a successful store. A rejected alarm leaves the
+    store unchanged.
     """
     expected_id = store["next_alarm_id"]
     if alarm["id"] != expected_id:
         raise ValueError(f"The next alarm id is {expected_id}.")
     if len(store["alarms_by_id"]) >= MAX_ALARMS:
         raise ValueError(f"At most {MAX_ALARMS} alarms can be stored.")
+    conflict_id = find_conflict(alarm, store["alarms_by_id"])
+    if conflict_id is not None:
+        raise ValueError(f"This alarm overlaps alarm {conflict_id}.")
 
     stored = dict(alarm)
     stored["weekdays"] = set(alarm["weekdays"])
